@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "RecoveryApp (local)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "recoveryapp",
+      "Username": "recoveryapp",
+      "SSLMode": "prefer"
+    }
+  }
+}
