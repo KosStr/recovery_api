@@ -19,12 +19,22 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.Property(u => u.Id).ValueGeneratedNever();
         builder.Property(u => u.Email).HasMaxLength(320);
-        builder.Property(u => u.AppleUserId).HasMaxLength(255).IsRequired();
+        builder.Property(u => u.AppleUserId).HasMaxLength(255);
+        builder.Property(u => u.IsAnonymous).HasDefaultValue(false);
         builder.Property(u => u.CreatedAt).HasColumnType("timestamptz");
         builder.Property(u => u.UpdatedAt).HasColumnType("timestamptz");
+        builder.Property(u => u.LastLoginAt).HasColumnType("timestamptz");
         builder.Property(u => u.DeletedAt).HasColumnType("timestamptz");
 
-        builder.HasIndex(u => u.AppleUserId).IsUnique();
+        // Partial for two reasons: guest accounts carry no Apple id, and a deleted account must not
+        // permanently lock its Apple id out of signing up again.
+        builder.HasIndex(u => u.AppleUserId)
+            .IsUnique()
+            .HasFilter("apple_user_id IS NOT NULL AND deleted_at IS NULL");
+
+        // Guest accounts are expected to be reaped once they are old and idle.
+        builder.HasIndex(u => new { u.IsAnonymous, u.LastLoginAt })
+            .HasFilter("is_anonymous = true AND deleted_at IS NULL");
 
         // Partial unique index: recycled addresses on deleted accounts must not block a new signup.
         builder.HasIndex(u => u.Email)

@@ -87,12 +87,7 @@ public sealed class BearerSecurityOperationTransformer : IOpenApiOperationTransf
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(context);
 
-        IList<object> metadata = context.Description.ActionDescriptor.EndpointMetadata;
-
-        bool requiresAuthorization = metadata.OfType<IAuthorizeData>().Any()
-            && !metadata.OfType<IAllowAnonymous>().Any();
-
-        if (!requiresAuthorization)
+        if (!RequiresAuthorization(context.Description.ActionDescriptor.EndpointMetadata))
         {
             return Task.CompletedTask;
         }
@@ -110,5 +105,38 @@ public sealed class BearerSecurityOperationTransformer : IOpenApiOperationTransf
         });
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Mirrors how the authorization middleware resolves an endpoint: metadata is ordered from least
+    /// to most specific, so whichever of <see cref="IAuthorizeData"/> and <see cref="IAllowAnonymous"/>
+    /// appears last wins.
+    /// </summary>
+    /// <remarks>
+    /// Asking merely "is there any <see cref="IAllowAnonymous"/>?" gets this wrong for an authorized
+    /// endpoint inside an anonymous route group — the auth group is exactly that shape — and the
+    /// document would then tell a generated client no token is needed on a call that returns 401.
+    /// </remarks>
+    private static bool RequiresAuthorization(IList<object> metadata)
+    {
+        int authorize = -1;
+        int anonymous = -1;
+
+        for (int i = 0; i < metadata.Count; i++)
+        {
+            switch (metadata[i])
+            {
+                case IAllowAnonymous:
+                    anonymous = i;
+                    break;
+                case IAuthorizeData:
+                    authorize = i;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return authorize >= 0 && authorize > anonymous;
     }
 }

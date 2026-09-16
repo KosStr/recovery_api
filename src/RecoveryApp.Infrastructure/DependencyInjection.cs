@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using RecoveryApp.Application.Abstractions;
 using RecoveryApp.Infrastructure.Auth;
 using RecoveryApp.Infrastructure.Persistence;
@@ -12,6 +15,9 @@ public static class DependencyInjection
 {
     /// <summary>Name of the Postgres connection string in configuration.</summary>
     public const string ConnectionStringName = "Postgres";
+
+    /// <summary>Named <see cref="HttpClient"/> used to fetch Apple's OIDC metadata and signing keys.</summary>
+    public const string AppleMetadataClientName = "apple-oidc";
 
     /// <summary>
     /// Registers the EF Core context, the token services and the server clock.
@@ -44,19 +50,56 @@ public static class DependencyInjection
 
         services.AddOptions<AppleAuthOptions>()
             .Bind(configuration.GetSection(AppleAuthOptions.SectionName))
-            .Validate(
-                options => options.UseStubVerification,
-                "Signature-checked Apple identity token verification is not implemented yet. Either leave "
-                + "AppleAuth:UseStubVerification set to true, or replace the IAppleIdentityTokenVerifier "
-                + "registration with one that validates against https://appleid.apple.com/auth/keys.")
             .ValidateOnStart();
 
         services.TryAddSingletonTimeProvider();
 
         services.AddSingleton<ITokenService, TokenService>();
-        services.AddScoped<IAppleIdentityTokenVerifier, StubAppleIdentityTokenVerifier>();
+        services.AddAppleVerification(configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers the Apple identity token verifier. Real JWKS verification is the default; the stub
+    /// has to be asked for explicitly, so it cannot reach an environment by being forgotten.
+    /// </summary>
+    private static void AddAppleVerification(this IServiceCollection services, IConfiguration configuration)
+    {
+        bool useStub = configuration
+            .GetSection(AppleAuthOptions.SectionName)
+            .GetValue(nameof(AppleAuthOptions.UseStubVerification), defaultValue: false);
+
+        if (useStub)
+        {
+            services.AddScoped<IAppleIdentityTokenVerifier, StubAppleIdentityTokenVerifier>();
+            return;
+        }
+
+        // A named client so Apple's metadata fetch gets its own handler lifetime and timeout rather
+        // than sharing whatever the rest of the app is doing.
+        services.AddHttpClient(AppleMetadataClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+
+        services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(provider =>
+        {
+            AppleAuthOptions options = provider
+                .GetRequiredService<IOptions<AppleAuthOptions>>()
+                .Value;
+
+            HttpClient http = provider
+                .GetRequiredService<IHttpClientFactory>()
+                .CreateClient(AppleMetadataClientName);
+
+            return new ConfigurationManager<OpenIdConnectConfiguration>(
+                options.MetadataAddress,
+                new OpenIdConnectConfigurationRetriever(),
+                new HttpDocumentRetriever(http) { RequireHttps = true })
+            {
+                AutomaticRefreshInterval = options.KeyCacheDuration,
+            };
+        });
+
+        services.AddScoped<IAppleIdentityTokenVerifier, AppleJwksIdentityTokenVerifier>();
     }
 
     private static void TryAddSingletonTimeProvider(this IServiceCollection services)

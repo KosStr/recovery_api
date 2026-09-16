@@ -22,9 +22,14 @@ public sealed class RefreshTokenRequestValidator : AbstractValidator<RefreshToke
 
 /// <summary>Handles <see cref="RefreshTokensCommand"/>.</summary>
 /// <param name="db">Persistence surface.</param>
-/// <param name="tokens">Application token service.</param>
+/// <param name="tokens">Token service, used to hash the presented token for lookup.</param>
+/// <param name="issuer">Credential issuance.</param>
 /// <param name="timeProvider">Server clock.</param>
-public sealed class RefreshTokensHandler(IAppDbContext db, ITokenService tokens, TimeProvider timeProvider)
+public sealed class RefreshTokensHandler(
+    IAppDbContext db,
+    ITokenService tokens,
+    AuthTokenIssuer issuer,
+    TimeProvider timeProvider)
     : IRequestHandler<RefreshTokensCommand, AuthTokensResponse>
 {
     /// <inheritdoc />
@@ -51,27 +56,12 @@ public sealed class RefreshTokensHandler(IAppDbContext db, ITokenService tokens,
             ?? throw new AuthenticationFailedException("The account is no longer active.");
 
         stored.RevokedAt = now;
+        user.RecordLogin(now);
 
-        (string accessToken, DateTimeOffset accessExpiresAt) = tokens.CreateAccessToken(user.Id);
-        (string refreshToken, string refreshHash, DateTimeOffset refreshExpiresAt) = tokens.CreateRefreshToken();
-
-        db.RefreshTokens.Add(new RefreshToken
-        {
-            Id = Guid.CreateVersion7(now),
-            UserId = user.Id,
-            TokenHash = refreshHash,
-            CreatedAt = now,
-            ExpiresAt = refreshExpiresAt,
-        });
+        AuthTokensResponse response = issuer.Issue(user, now, isNewUser: false);
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return new AuthTokensResponse(
-            accessToken,
-            refreshToken,
-            accessExpiresAt,
-            refreshExpiresAt,
-            "Bearer",
-            new UserProfileResponse(user.Id, user.Email, user.CreatedAt, IsNewUser: false));
+        return response;
     }
 }

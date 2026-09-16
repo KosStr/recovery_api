@@ -29,12 +29,12 @@ public sealed class AppleSignInRequestValidator : AbstractValidator<AppleSignInR
 /// <summary>Handles <see cref="SignInWithAppleCommand"/>.</summary>
 /// <param name="db">Persistence surface.</param>
 /// <param name="verifier">Apple identity token verifier.</param>
-/// <param name="tokens">Application token service.</param>
+/// <param name="issuer">Credential issuance.</param>
 /// <param name="timeProvider">Server clock.</param>
 public sealed class SignInWithAppleHandler(
     IAppDbContext db,
     IAppleIdentityTokenVerifier verifier,
-    ITokenService tokens,
+    AuthTokenIssuer issuer,
     TimeProvider timeProvider)
     : IRequestHandler<SignInWithAppleCommand, AuthTokensResponse>
 {
@@ -57,46 +57,23 @@ public sealed class SignInWithAppleHandler(
 
         if (user is null)
         {
-            user = new User
-            {
-                Id = Guid.CreateVersion7(now),
-                AppleUserId = identity.AppleUserId,
-                Email = identity.Email,
-                CreatedAt = now,
-                UpdatedAt = now,
-            };
+            user = User.CreateFromApple(identity.AppleUserId, identity.Email, now);
 
             db.Users.Add(user);
             db.UserSettings.Add(new UserSettings { UserId = user.Id, UpdatedAt = now });
         }
-        else if (identity.Email is not null && user.Email != identity.Email)
+        else
         {
-            // Apple only releases the email on the first authorization; keep the first value we saw
-            // unless the account genuinely has none yet.
+            // Apple only releases the email on the first authorization, so a later sign-in carrying
+            // one fills a gap rather than overwriting what we already trust.
             user.Email ??= identity.Email;
-            user.UpdatedAt = now;
+            user.RecordLogin(now);
         }
 
-        (string accessToken, DateTimeOffset accessExpiresAt) = tokens.CreateAccessToken(user.Id);
-        (string refreshToken, string refreshHash, DateTimeOffset refreshExpiresAt) = tokens.CreateRefreshToken();
-
-        db.RefreshTokens.Add(new RefreshToken
-        {
-            Id = Guid.CreateVersion7(now),
-            UserId = user.Id,
-            TokenHash = refreshHash,
-            CreatedAt = now,
-            ExpiresAt = refreshExpiresAt,
-        });
+        AuthTokensResponse response = issuer.Issue(user, now, isNewUser);
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return new AuthTokensResponse(
-            accessToken,
-            refreshToken,
-            accessExpiresAt,
-            refreshExpiresAt,
-            "Bearer",
-            new UserProfileResponse(user.Id, user.Email, user.CreatedAt, isNewUser));
+        return response;
     }
 }

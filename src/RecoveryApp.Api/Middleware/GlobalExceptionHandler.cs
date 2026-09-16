@@ -69,6 +69,7 @@ public sealed class GlobalExceptionHandler(
         ValidationException => (StatusCodes.Status400BadRequest, "One or more validation errors occurred.", null),
         AuthenticationFailedException => (StatusCodes.Status401Unauthorized, "Authentication failed.", exception.Message),
         NotFoundException => (StatusCodes.Status404NotFound, "Resource not found.", exception.Message),
+        AccountConflictException => (StatusCodes.Status409Conflict, "Account conflict.", exception.Message),
         IdempotencyConflictException => (StatusCodes.Status409Conflict, "Idempotency key conflict.", exception.Message),
         DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "The resource was modified concurrently.", null),
         BadHttpRequestException bad => (bad.StatusCode, "Malformed request.", bad.Message),

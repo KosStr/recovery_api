@@ -24,8 +24,11 @@ public sealed class JwtOptions
     [MinLength(32)]
     public string SigningKey { get; set; } = string.Empty;
 
-    /// <summary>How long an issued access token stays valid.</summary>
-    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// How long an issued access token stays valid. Short by design: an access token cannot be
+    /// revoked, so its lifetime is the window an leaked one stays useful.
+    /// </summary>
+    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>How long an issued refresh token stays valid.</summary>
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(60);
@@ -44,8 +47,18 @@ public sealed class AppleAuthOptions
     public string Issuer { get; set; } = "https://appleid.apple.com";
 
     /// <summary>
-    /// When true the identity token is decoded but its signature is not checked against Apple's
-    /// JWKS. Intended for local development and contract tests only.
+    /// Apple's OpenID Connect discovery document. It points at the JWKS endpoint
+    /// (<c>https://appleid.apple.com/auth/keys</c>) that identity tokens are verified against.
     /// </summary>
-    public bool UseStubVerification { get; set; } = true;
+    public string MetadataAddress { get; set; } = "https://appleid.apple.com/.well-known/openid-configuration";
+
+    /// <summary>How long the fetched signing keys are reused before a scheduled refresh.</summary>
+    public TimeSpan KeyCacheDuration { get; set; } = TimeSpan.FromHours(12);
+
+    /// <summary>
+    /// When true, identity tokens are decoded but their signature is <b>not</b> checked against
+    /// Apple's JWKS, and any non-JWT string is accepted as a test identity. Local development and
+    /// contract tests only — see <see cref="StubAppleIdentityTokenVerifier"/>.
+    /// </summary>
+    public bool UseStubVerification { get; set; }
 }

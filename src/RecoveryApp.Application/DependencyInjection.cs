@@ -21,6 +21,9 @@ public static class DependencyInjection
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(assembly));
         services.AddValidatorsFromAssembly(assembly, includeInternalTypes: false);
 
+        // Shared by every auth exchange; not a handler, so the MediatR scan does not pick it up.
+        services.AddScoped<Features.Auth.AuthTokenIssuer>();
+
         return services;
     }
 }

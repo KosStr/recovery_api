@@ -19,7 +19,7 @@ public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider time
         SecurityAlgorithms.HmacSha256);
 
     /// <inheritdoc />
-    public (string Token, DateTimeOffset ExpiresAt) CreateAccessToken(Guid userId)
+    public (string Token, DateTimeOffset ExpiresAt) CreateAccessToken(Guid userId, bool isAnonymous)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
         DateTimeOffset expiresAt = now + _options.AccessTokenLifetime;
@@ -37,6 +37,7 @@ public sealed class TokenService(IOptions<JwtOptions> options, TimeProvider time
                 new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.CreateVersion7(now).ToString()),
+                new Claim(ITokenService.IsAnonymousClaimType, isAnonymous ? "true" : "false", ClaimValueTypes.Boolean),
             ]),
         };
 
