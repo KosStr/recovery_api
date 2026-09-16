@@ -1,0 +1,45 @@
+name: recoveryapp
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: recoveryapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: recoveryapp
+      POSTGRES_USER: recoveryapp
+      POSTGRES_PASSWORD: recoveryapp
+      # Deterministic collation keeps index ordering identical across machines and CI.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=und-x-icu --encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recoveryapp -d recoveryapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: recoveryapp-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dev@recoveryapp.local
+      PGADMIN_DEFAULT_PASSWORD: recoveryapp
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  pgadmin-data:
